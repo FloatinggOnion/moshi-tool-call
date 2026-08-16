@@ -1,0 +1,182 @@
+[
+  {
+    "id": 1,
+    "question": "Tell me a joke.",
+    "expected": {
+      "tool_required": false,
+      "tool": null,
+      "response_mode": "direct"
+    }
+  },
+  {
+    "id": 2,
+    "question": "Who are you?",
+    "expected": {
+      "tool_required": false,
+      "tool": null,
+      "response_mode": "direct"
+    }
+  },
+  {
+    "id": 3,
+    "question": "Say 'good morning' in French.",
+    "expected": {
+      "tool_required": false,
+      "tool": null,
+      "response_mode": "direct"
+    }
+  },
+  {
+    "id": 4,
+    "question": "Explain what a speech-to-speech model is in simple terms.",
+    "expected": {
+      "tool_required": false,
+      "tool": null,
+      "response_mode": "direct"
+    }
+  },
+  {
+    "id": 5,
+    "question": "Talk to me like a friendly bank teller.",
+    "expected": {
+      "tool_required": false,
+      "tool": null,
+      "response_mode": "direct"
+    }
+  },
+  {
+    "id": 6,
+    "question": "Repeat after me: I will finish this demo.",
+    "expected": {
+      "tool_required": false,
+      "tool": null,
+      "response_mode": "direct"
+    }
+  },
+  {
+    "id": 7,
+    "question": "What can you do?",
+    "expected": {
+      "tool_required": false,
+      "tool": null,
+      "response_mode": "direct"
+    }
+  },
+  {
+    "id": 8,
+    "question": "Summarize our last conversation in one sentence.",
+    "expected": {
+      "tool_required": false,
+      "tool": null,
+      "response_mode": "direct"
+    }
+  },
+  {
+    "id": 9,
+    "question": "What's today's date?",
+    "expected": {
+      "tool_required": true,
+      "tool": "get_current_date",
+      "response_mode": "hold_then_answer"
+    }
+  },
+  {
+    "id": 10,
+    "question": "What time is it right now?",
+    "expected": {
+      "tool_required": true,
+      "tool": "get_current_time",
+      "response_mode": "hold_then_answer"
+    }
+  },
+  {
+    "id": 11,
+    "question": "What's the weather in Abuja at the moment?",
+    "expected": {
+      "tool_required": true,
+      "tool": "get_weather",
+      "response_mode": "hold_then_answer"
+    }
+  },
+  {
+    "id": 12,
+    "question": "What's my current account balance?",
+    "expected": {
+      "tool_required": true,
+      "tool": "get_account_balance",
+      "response_mode": "hold_then_answer"
+    }
+  },
+  {
+    "id": 13,
+    "question": "Convert 100 US dollars to naira.",
+    "expected": {
+      "tool_required": true,
+      "tool": "convert_currency",
+      "response_mode": "hold_then_answer"
+    }
+  },
+  {
+    "id": 14,
+    "question": "Set a reminder for tomorrow at 9 AM to call my bank.",
+    "expected": {
+      "tool_required": true,
+      "tool": "set_reminder",
+      "response_mode": "hold_then_answer"
+    }
+  },
+  {
+    "id": 15,
+    "question": "Check the exchange rate for euro to naira today.",
+    "expected": {
+      "tool_required": true,
+      "tool": "get_exchange_rate",
+      "response_mode": "hold_then_answer"
+    }
+  },
+  {
+    "id": 16,
+    "question": "I think I'm broke, how much do I have in my account?",
+    "expected": {
+      "tool_required": true,
+      "tool": "get_account_balance",
+      "response_mode": "hold_then_answer"
+    }
+  },
+  {
+    "id": 17,
+    "question": "Is it raining today?",
+    "expected": {
+      "tool_required": true,
+      "tool": "get_weather",
+      "response_mode": "hold_then_answer"
+    }
+  },
+  {
+    "id": 18,
+    "question": "Can you help me plan my budget for this month?",
+    "expected": {
+      "tool_required": false,
+      "tool": null,
+      "response_mode": "direct"
+    }
+  },
+  {
+    "id": 19,
+    "question": "Remind me next week to pay my electricity bill.",
+    "expected": {
+      "tool_required": true,
+      "tool": "set_reminder",
+      "response_mode": "hold_then_answer"
+    }
+  },
+  {
+    "id": 20,
+    "question": "If I save 50,000 naira every month, how much will I have in a year?",
+    "expected": {
+      "tool_required": false,
+      "tool": null,
+      "response_mode": "direct"
+    }
+  }
+]

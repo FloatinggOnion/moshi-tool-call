@@ -1,0 +1,9 @@
+[project]
+name = "s2s-tools"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "moshi-mlx>=0.3.0",
+]

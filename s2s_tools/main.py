@@ -9,10 +9,10 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from controller import Controller, MinistralRouter
-from moshi_speech import MoshiSpeechInjector
-from tools import ToolRegistry
-from transcript import RollingTranscriptBuffer
+from .controller import Controller, LLMRouter
+from .moshi_speech import MoshiSpeechInjector
+from .tools import ToolRegistry
+from .transcript import RollingTranscriptBuffer
 
 
 def _format_turn(result) -> str:
@@ -36,7 +36,7 @@ def _format_plan(plan) -> str:
 
 async def run_once(text: str) -> None:
     registry = ToolRegistry()
-    controller = Controller(MinistralRouter(), registry)
+    controller = Controller(LLMRouter(), registry)
 
     try:
         result = await controller.handle_input(text)
@@ -47,7 +47,7 @@ async def run_once(text: str) -> None:
 
 async def repl() -> None:
     registry = ToolRegistry()
-    controller = Controller(MinistralRouter(), registry)
+    controller = Controller(LLMRouter(), registry)
 
     print("Type a user utterance. Enter 'quit' or 'exit' to stop.")
 
@@ -74,7 +74,7 @@ async def repl() -> None:
 
 async def transcript_dry_run() -> None:
     registry = ToolRegistry()
-    controller = Controller(MinistralRouter(), registry)
+    controller = Controller(LLMRouter(), registry)
     buffer = RollingTranscriptBuffer()
 
     print("Paste rolling transcript snapshots one per line.")
@@ -126,7 +126,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--transcript-dry-run",
         action="store_true",
-        help="Inspect rolling transcript snapshots and show the Ministral routing plan without executing tools.",
+        help="Inspect rolling transcript snapshots and show the LLM routing plan without executing tools.",
     )
     parser.add_argument(
         "--render-holding-phrase",

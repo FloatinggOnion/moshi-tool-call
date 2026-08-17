@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any
 from urllib.request import Request, urlopen
 
-from tools import AsyncToolQueue, ToolRegistry
+from .tools import AsyncToolQueue, ToolRegistry
 
 
 class ControllerState(str, Enum):
@@ -67,15 +67,47 @@ class TurnPlan:
     route_source: str
 
 
-class MinistralRouter:
+class LLMRouter:
+    """Routing controller backed by any OpenAI-compatible chat completions
+    endpoint -- local (e.g. llama-server) by default, or Groq's cloud API
+    when GROQ_API_URL/GROQ_API_KEY are set. Not tied to any specific model.
+    """
+
+    # Shared across all instances, not per-instance: when the router is a
+    # local process (e.g. llama-server) co-located with Moshi on the same
+    # GPU/CPU, overlapping requests compound resource contention (measured:
+    # ~1.4x slower Moshi frame throughput under a single concurrent router
+    # call). This queues router calls so at most one is in flight at a time,
+    # regardless of how many Controller/LiveSession instances exist.
+    _request_gate = asyncio.Semaphore(1)
+
+    DEFAULT_LOCAL_URL = "http://localhost:8000/v1/chat/completions"
+
     def __init__(
         self,
         api_url: str | None = None,
         model_name: str | None = None,
+        api_key: str | None = None,
         timeout_seconds: int = 30,
     ) -> None:
-        self.api_url = api_url or os.getenv("MINISTRAL_API_URL", "http://localhost:8000/v1/chat/completions")
-        self.model_name = model_name or os.getenv("MINISTRAL_MODEL", "ministral")
+        groq_url = os.getenv("GROQ_API_URL")
+        self.api_key = api_key or os.getenv("GROQ_API_KEY")
+
+        if api_url is not None:
+            self.api_url = api_url
+        elif groq_url:
+            if not self.api_key:
+                raise ValueError("GROQ_API_URL is set but GROQ_API_KEY is missing")
+            self.api_url = groq_url
+        else:
+            # Local is the default modality; Groq only takes effect if
+            # explicitly configured via the env vars above.
+            self.api_url = self.DEFAULT_LOCAL_URL
+
+        self.using_groq = self.api_url == groq_url and bool(groq_url)
+        self.model_name = model_name or os.getenv(
+            "LLM_MODEL", "llama-3.1-8b-instant" if self.using_groq else "local-model"
+        )
         self.timeout_seconds = timeout_seconds
 
     def _build_messages(self, text: str, registry: ToolRegistry) -> list[dict[str, str]]:
@@ -115,12 +147,19 @@ class MinistralRouter:
             "temperature": 0,
             "messages": messages,
             "max_tokens": 300,
-            "chat_template_kwargs": {"enable_thinking": False},
         }
+        headers = {"Content-Type": "application/json"}
+        if self.using_groq:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        else:
+            # llama-server-specific extension to suppress reasoning-model
+            # <think> preambles; not part of the OpenAI schema Groq expects.
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+
         request = Request(
             self.api_url,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
         )
 
         with urlopen(request, timeout=self.timeout_seconds) as response:
@@ -202,15 +241,16 @@ class MinistralRouter:
     async def route(self, text: str, registry: ToolRegistry) -> tuple[RoutingDecision, str]:
         messages = self._build_messages(text, registry)
         try:
-            raw_text = await asyncio.to_thread(self._call_model, messages)
+            async with self._request_gate:
+                raw_text = await asyncio.to_thread(self._call_model, messages)
             payload = self._extract_json_object(raw_text)
-            return RoutingDecision.from_dict(payload), "ministral"
+            return RoutingDecision.from_dict(payload), "llm"
         except Exception:
             return self._fallback_route(text), "fallback"
 
 
 class Controller:
-    def __init__(self, router: MinistralRouter, registry: ToolRegistry) -> None:
+    def __init__(self, router: LLMRouter, registry: ToolRegistry) -> None:
         self._router = router
         self._registry = registry
         self._tool_queue = AsyncToolQueue(registry)

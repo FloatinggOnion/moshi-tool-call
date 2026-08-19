@@ -155,6 +155,18 @@ class LiveMoshiEngine:
             self._forced_tokens = []
             self._forced_hold_steps = 0
 
+    def force_pad(self, num_steps: int) -> None:
+        """Force silence for num_steps frames with no queued words -- used as
+        a settle period after a forced phrase. The model's own context ending
+        in force-injected (not organically sampled) text tends to induce an
+        echo/repetition loop once natural generation resumes; a short forced
+        silence gives it a clean run-up instead of continuing straight out of
+        that context. Heuristic, not a guaranteed fix."""
+        with self._lock:
+            self._forced_tokens = []
+            self._forced_hold_steps = num_steps
+            self._frames_since_force = 0
+
     @property
     def is_forcing(self) -> bool:
         with self._lock:
@@ -250,15 +262,35 @@ class MicSpeakerIO:
     """Real sounddevice mic/speaker backend for interactive use. Not
     exercised by the automated test harness -- requires a live speaker."""
 
+    # engine.step() runs slower than real-time on modest hardware (measured
+    # ~9 steps/s vs. the ~12.5 steps/s mic input arrives at), so an unbounded
+    # queue here just accumulates an ever-growing backlog of stale audio --
+    # the model falls further behind every second and never catches up to
+    # what's actually being said "now". Bounding the queue and dropping the
+    # oldest frame when full keeps it processing near-live audio instead,
+    # at the cost of skipping some input while it's behind.
+    MAX_QUEUED_INPUT_FRAMES = 4
+
     def __init__(self) -> None:
         import sounddevice as sd  # local import: optional dependency for --mode wav
 
         self._sd = sd
-        self.input_queue: queue.Queue = queue.Queue()
+        self.input_queue: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=self.MAX_QUEUED_INPUT_FRAMES)
         self.output_queue: queue.Queue = queue.Queue()
 
         def on_input(in_data, frames, t, status):
-            self.input_queue.put_nowait(in_data[:, 0].astype(np.float32))
+            frame = in_data[:, 0].astype(np.float32)
+            try:
+                self.input_queue.put_nowait(frame)
+            except queue.Full:
+                try:
+                    self.input_queue.get_nowait()  # drop the oldest, make room for the newest
+                except queue.Empty:
+                    pass
+                try:
+                    self.input_queue.put_nowait(frame)
+                except queue.Full:
+                    pass
 
         def on_output(out_data, frames, t, status):
             try:
@@ -321,6 +353,14 @@ class LiveSession:
         self._barge_in_run = 0
         self._current_turn_task: Optional[asyncio.Task] = None
         self._current_tool_future = None
+
+        # Direct/small-talk turns don't consume the one-shot tool-turn
+        # budget (see _maybe_start_turn), so without this a model stuck
+        # repeating filler with no real speech to react to floods the
+        # router with an identical chunk on every repeat.
+        self._last_direct_text: Optional[str] = None
+        self._last_direct_time = 0.0
+        self._direct_cooldown_seconds = 3.0
 
         self.buffer = RollingTranscriptBuffer(stability_window_seconds=0.6, min_chunk_chars=6)
         self.transcript_acc = ""
@@ -419,6 +459,12 @@ class LiveSession:
         # re-routed and re-acted-on indefinitely.
         if not text.strip() or self._turn_active or self._turn_handled:
             return
+        # Same guard for the direct/small-talk path, which isn't covered by
+        # _turn_handled: if the model repeats the same filler with nothing
+        # new to react to, don't re-route on every repeat.
+        now = time.monotonic()
+        if text == self._last_direct_text and (now - self._last_direct_time) < self._direct_cooldown_seconds:
+            return
         self._turn_active = True
         self._current_turn_task = asyncio.create_task(self._handle_chunk(text))
 
@@ -426,7 +472,7 @@ class LiveSession:
         """User spoke over the holding phrase or final answer: cancel the
         in-flight turn (tool call included) and clear conversation state so
         the new speech gets a fresh re-plan, not a stale re-route."""
-        self.timeline.mark("interrupted_by_user")
+        self._log("interrupted_by_user", "[!]      interrupted -- re-planning")
 
         if self._current_tool_future is not None and not self._current_tool_future.done():
             self._current_tool_future.cancel()
@@ -444,28 +490,39 @@ class LiveSession:
         self._turn_handled = False
         self._current_turn_task = None
         self._current_tool_future = None
-        self.timeline.mark("re_plan_ready")
+        self._log("re_plan_ready", "[ready]  listening again")
 
     async def _watch_forcing_complete(self) -> int:
         while self.engine.is_forcing:
             await asyncio.sleep(0.05)
         return self.engine.frames_forced
 
+    def _log(self, label: str, display: str) -> float:
+        """Mark the timeline and print live to the console -- the timeline
+        report only prints at session end, so this is the only place to
+        follow the conversation while --mode mic is actually running."""
+        t = self.timeline.mark(label)
+        print(display, flush=True)
+        return t
+
     async def _handle_chunk(self, text: str) -> None:
         turn_metrics: dict = {"user_text": text}
         try:
-            t_chunk = self.timeline.mark(f"transcript_chunk: {text!r}")
+            t_chunk = self._log(f"transcript_chunk: {text!r}", f"[heard]  {text}")
             decision, route_source = await self.controller._router.route(text, self.registry)
-            t_decision = self.timeline.mark(
+            t_decision = self._log(
                 f"router_decision: intent={decision.intent} tool_required={decision.tool_required} "
-                f"tool={decision.tool} source={route_source}"
+                f"tool={decision.tool} source={route_source}",
+                f"[router] intent={decision.intent} tool={decision.tool}",
             )
             turn_metrics["router_latency_s"] = t_decision - t_chunk
             turn_metrics["intent"] = decision.intent
             turn_metrics["tool"] = decision.tool
 
             if not decision.tool_required or not decision.tool:
-                self.timeline.mark("direct_response: no tool needed, natural generation continues")
+                self._log("direct_response: no tool needed, natural generation continues", "[direct] no tool needed")
+                self._last_direct_text = text
+                self._last_direct_time = time.monotonic()
                 return
 
             # Only the forced-injection path risks the repeat loop (see
@@ -473,7 +530,7 @@ class LiveSession:
             # a misheard direct/small-talk turn shouldn't burn it.
             self._turn_handled = True
             self.engine.force_say(HOLDING_PHRASE)
-            t_holding = self.timeline.mark(f"holding_phrase_injected: {HOLDING_PHRASE!r}")
+            t_holding = self._log(f"holding_phrase_injected: {HOLDING_PHRASE!r}", f"[moshi]  {HOLDING_PHRASE}")
             turn_metrics["latency_to_holding_phrase_s"] = t_holding - t_chunk
 
             # Run the tool call and the holding-phrase playback watcher
@@ -491,18 +548,18 @@ class LiveSession:
                 raise
             except Exception as exc:
                 holding_watch.cancel()
-                t_err = self.timeline.mark(f"tool_error: {exc!r}")
+                t_err = self._log(f"tool_error: {exc!r}", f"[tool]   error: {exc}")
                 turn_metrics["tool_error"] = repr(exc)
                 turn_metrics["tool_latency_s"] = t_err - t_holding
                 return
-            t_tool = self.timeline.mark(f"tool_result_received: {tool_result}")
+            t_tool = self._log(f"tool_result_received: {tool_result}", f"[tool]   {tool_result}")
             turn_metrics["tool_latency_s"] = t_tool - t_holding
             turn_metrics["holding_phrase_audio_s"] = holding_frames * FRAME / SAMPLE_RATE
 
             template = FINAL_ANSWER_TEMPLATES.get(decision.tool)
             final_text = template(tool_result) if template else "Here is what I found."
             self.engine.force_say(final_text)
-            t_final = self.timeline.mark(f"final_answer_injected: {final_text!r}")
+            t_final = self._log(f"final_answer_injected: {final_text!r}", f"[moshi]  {final_text}")
             turn_metrics["latency_to_final_answer_s"] = t_final - t_chunk
             turn_metrics["final_answer_text"] = final_text
 
@@ -516,6 +573,13 @@ class LiveSession:
             # far outside that band is a proxy for "will sound unnatural"
             # (too clipped/rushed if low, too draggy/robotic if high).
             turn_metrics["final_answer_pace_natural"] = 0.2 <= turn_metrics["final_answer_pace_s_per_word"] <= 0.7
+
+            # Settle period: forced injection leaves the model's context
+            # ending in text it never organically sampled, which tends to
+            # induce an echo/repetition loop once natural generation resumes
+            # (see force_pad docstring). A brief forced silence breaks that.
+            self.engine.force_pad(12)
+            await self._watch_forcing_complete()
         except asyncio.CancelledError:
             turn_metrics["cancelled"] = True
             raise
@@ -655,7 +719,10 @@ async def run_mic_mode(args: argparse.Namespace) -> None:
         print("Listening. Press Ctrl+C to stop.")
         try:
             await session.run()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            # asyncio.run()'s SIGINT handling cancels the running task, which
+            # raises CancelledError here (not KeyboardInterrupt) -- either
+            # way, Ctrl+C means stop and still print the summary below.
             pass
 
     await controller.shutdown()
@@ -701,12 +768,18 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.mode == "wav":
-        if not args.wav_in:
-            parser.error("--wav-in is required for --mode wav")
-        asyncio.run(run_wav_mode(args))
-    else:
-        asyncio.run(run_mic_mode(args))
+    try:
+        if args.mode == "wav":
+            if not args.wav_in:
+                parser.error("--wav-in is required for --mode wav")
+            asyncio.run(run_wav_mode(args))
+        else:
+            asyncio.run(run_mic_mode(args))
+    except KeyboardInterrupt:
+        # asyncio.run() re-raises the original KeyboardInterrupt here even
+        # after run_mic_mode already handled the cancellation and printed
+        # its summary -- this just stops it from also printing a traceback.
+        pass
 
 
 if __name__ == "__main__":

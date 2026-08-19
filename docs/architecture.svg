@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 660" font-family="-apple-system, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b6b6b"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1180" height="660" fill="#ffffff"/>
+
+  <text x="30" y="32" font-size="19" font-weight="700" fill="#2b2b2b">s2s_tools -- speech-to-speech tool calling</text>
+  <text x="30" y="54" font-size="13" fill="#5c5c5c">mic -&gt; Mimi -&gt; Moshi (full-duplex, forced-injection TTS) -&gt; transcript tap -&gt; LLM router -&gt; controller -&gt; tool -&gt; forced answer -&gt; Mimi -&gt; speaker</text>
+
+  <!-- User -->
+  <rect x="30" y="220" width="150" height="90" rx="14" fill="#f1efe9" stroke="#9c9686"/>
+  <text x="105" y="258" text-anchor="middle" font-size="17" font-weight="600" fill="#2b2b2b">User</text>
+  <text x="105" y="280" text-anchor="middle" font-size="13" fill="#5c5c5c">mic + speaker</text>
+
+  <!-- Mimi encoder/decoder -->
+  <rect x="240" y="160" width="180" height="80" rx="12" fill="#f1efe9" stroke="#9c9686"/>
+  <text x="330" y="193" text-anchor="middle" font-size="15" font-weight="600" fill="#2b2b2b">Mimi encoder</text>
+  <text x="330" y="213" text-anchor="middle" font-size="12" fill="#5c5c5c">speech -&gt; audio tokens</text>
+
+  <rect x="240" y="290" width="180" height="80" rx="12" fill="#f1efe9" stroke="#9c9686"/>
+  <text x="330" y="323" text-anchor="middle" font-size="15" font-weight="600" fill="#2b2b2b">Mimi decoder</text>
+  <text x="330" y="343" text-anchor="middle" font-size="12" fill="#5c5c5c">tokens -&gt; speech</text>
+
+  <!-- Moshi speech loop group -->
+  <rect x="480" y="90" width="420" height="400" rx="18" fill="none" stroke="#c9c9c9"/>
+  <text x="505" y="118" font-size="15" font-weight="700" fill="#2b2b2b">Moshi speech loop (live_loop.py)</text>
+
+  <rect x="510" y="132" width="360" height="80" rx="12" fill="#e4edf7" stroke="#4a76a8"/>
+  <text x="690" y="160" text-anchor="middle" font-size="16" font-weight="700" fill="#1f4a75">Moshi / LmGen</text>
+  <text x="690" y="180" text-anchor="middle" font-size="12" fill="#345a80">full-duplex step() + on_text_hook</text>
+  <text x="690" y="197" text-anchor="middle" font-size="12" fill="#345a80">forced injection (holding phrase / final answer)</text>
+
+  <rect x="510" y="228" width="360" height="50" rx="12" fill="#fbfaf7" stroke="#c9c2ad"/>
+  <text x="690" y="258" text-anchor="middle" font-size="14" font-weight="600" fill="#2b2b2b">Transcript tap (Moshi's own inner monologue)</text>
+
+  <rect x="510" y="294" width="360" height="80" rx="12" fill="#fbe8dd" stroke="#b5551f"/>
+  <text x="690" y="320" text-anchor="middle" font-size="16" font-weight="700" fill="#8a3d10">LLM router</text>
+  <text x="690" y="340" text-anchor="middle" font-size="12" fill="#8a3d10">intent + tool JSON, any OpenAI-compatible endpoint</text>
+  <text x="690" y="357" text-anchor="middle" font-size="12" fill="#8a3d10">local (default) or Groq (GROQ_API_URL/KEY)</text>
+
+  <rect x="510" y="390" width="360" height="80" rx="12" fill="#eef2ec" stroke="#5c7a54"/>
+  <text x="690" y="416" text-anchor="middle" font-size="14" font-weight="600" fill="#33502c">Barge-in detector</text>
+  <text x="690" y="436" text-anchor="middle" font-size="12" fill="#33502c">mic RMS while forced audio plays -&gt;</text>
+  <text x="690" y="453" text-anchor="middle" font-size="12" fill="#33502c">cancel_forcing() + cancel turn + re-plan</text>
+
+  <!-- Tool orchestration layer -->
+  <rect x="480" y="520" width="440" height="110" rx="18" fill="none" stroke="#c9c9c9"/>
+  <text x="505" y="548" font-size="15" font-weight="700" fill="#2b2b2b">Tool orchestration (controller.py / tools.py)</text>
+
+  <rect x="510" y="562" width="170" height="55" rx="12" fill="#fbe8dd" stroke="#b5551f"/>
+  <text x="595" y="587" text-anchor="middle" font-size="14" font-weight="600" fill="#8a3d10">Controller</text>
+  <text x="595" y="605" text-anchor="middle" font-size="11" fill="#8a3d10">deterministic, non-LLM</text>
+
+  <rect x="705" y="562" width="205" height="55" rx="12" fill="#fbe8dd" stroke="#b5551f"/>
+  <text x="807" y="587" text-anchor="middle" font-size="14" font-weight="600" fill="#8a3d10">AsyncToolQueue</text>
+  <text x="807" y="605" text-anchor="middle" font-size="11" fill="#8a3d10">date / time / weather / balance</text>
+
+  <!-- Flow arrows -->
+  <path d="M180,245 L240,215" stroke="#6b6b6b" fill="none" marker-end="url(#arrow)"/>
+  <text x="192" y="220" font-size="11" fill="#5c5c5c">speech</text>
+
+  <path d="M240,330 L180,285" stroke="#6b6b6b" fill="none" marker-end="url(#arrow)"/>
+  <text x="185" y="330" font-size="11" fill="#5c5c5c">speech</text>
+
+  <path d="M420,200 L510,172" stroke="#6b6b6b" fill="none" marker-end="url(#arrow)"/>
+  <path d="M510,325 L420,325" stroke="#6b6b6b" fill="none" marker-end="url(#arrow)"/>
+
+  <path d="M690,212 L690,228" stroke="#6b6b6b" fill="none" marker-end="url(#arrow)"/>
+  <path d="M690,278 L690,294" stroke="#6b6b6b" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- router -> controller -->
+  <path d="M650,374 L610,562" stroke="#6b6b6b" fill="none" marker-end="url(#arrow)"/>
+  <!-- controller -> executor -->
+  <path d="M680,590 L705,590" stroke="#6b6b6b" fill="none" marker-end="url(#arrow)"/>
+  <!-- executor result back into Moshi (force_say) -->
+  <path d="M925,562 C 990,562 990,175 872,155" stroke="#6b6b6b" fill="none" marker-end="url(#arrow)"/>
+  <text x="930" y="330" font-size="11" fill="#5c5c5c">tool result -&gt;</text>
+  <text x="930" y="344" font-size="11" fill="#5c5c5c">force_say(final answer)</text>
+
+  <!-- barge-in loop, dashed red -->
+  <path d="M690,470 C 690,505 300,530 105,312" stroke="#c0392b" stroke-dasharray="6,4" fill="none" marker-end="url(#arrow-red)"/>
+  <text x="270" y="500" font-size="11" fill="#c0392b" font-weight="600">user speaks over holding phrase / final answer</text>
+</svg>
